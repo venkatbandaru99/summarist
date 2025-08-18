@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Summarist</title>
+    <style>
+        body { 
+            width: 350px; 
+            padding: 20px; 
+            font-family: Arial, sans-serif; 
+            margin: 0;
+        }
+        button { 
+            width: 100%; 
+            padding: 10px; 
+            margin: 10px 0; 
+            font-size: 16px; 
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .hidden { display: none; }
+        
+        /* Auth buttons */
+        #loginBtn {
+            background: #4285f4;
+            color: white;
+        }
+        #testBtn {
+            background: #34a853;
+            color: white;
+        }
+        #logoutBtn {
+            background: #ea4335;
+            color: white;
+            width: auto;
+            padding: 5px 15px;
+            margin: 5px;
+            display: inline-block;
+        }
+        
+        /* App container */
+        .user-info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        /* Bookmark section */
+        .bookmark-section {
+            margin-top: 20px;
+        }
+        
+        .import-controls {
+            background: #e8f0fe;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        #importBtn {
+            background: #1a73e8;
+            color: white;
+        }
+        
+        #importBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .bookmark-count {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        /* Progress section */
+        .progress-container {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #4caf50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            text-align: center;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        /* Bookmark list */
+        .bookmark-list {
+            margin-top: 20px;
+        }
+        
+        .category {
+            margin-bottom: 15px;
+        }
+        
+        .category h4 {
+            margin: 0 0 10px 0;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        .bookmark-grid {
+            display: grid;
+            gap: 8px;
+        }
+        
+        .bookmark-item {
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 13px;
+        }
+        
+        .bookmark-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .bookmark-url {
+            color: #666;
+            font-size: 11px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Debug section */
+        #debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        
+        #debug-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h2>📚 Summarist</h2>
+    
+    <!-- Authentication Section -->
+    <div id="auth-container">
+        <p>Please login to continue</p>
+        <button id="loginBtn">🔐 Login with Google</button>
+        <button id="testBtn">🧪 Test Button (No Firebase)</button>
+    </div>
+
+    <!-- Main App Section -->
+    <div id="app-container" class="hidden">
+        <!-- User Info -->
+        <div class="user-info">
+            <span>👤 <span id="userEmail"></span></span>
+            <button id="logoutBtn">Logout</button>
+        </div>
+
+        <!-- Bookmark Management Section -->
+        <div class="bookmark-section">
+            <h3>📚 Your Reading List</h3>
+            
+            <!-- Import Controls -->
+            <div class="import-controls">
+                <button id="importBtn">📥 Import Bookmarks</button>
+                <div id="bookmarkCount" class="bookmark-count">
+                    Loading bookmark count...
+                </div>
+            </div>
+            
+            <!-- Import Progress (hidden by default) -->
+            <div id="importSection" style="display: none;">
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="importProgress" class="progress-fill"></div>
+                    </div>
+                    <div id="importProgressText" class="progress-text">
+                        Preparing import...
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bookmark List -->
+            <div id="bookmarkList" class="bookmark-list">
+                <div class="category">
+                    <h4>📖 Quick Reads (< 5 min)</h4>
+                    <div id="quickReads" class="bookmark-grid">
+                        <div class="bookmark-item">
+                            <div class="bookmark-title">Import bookmarks to see your reading list!</div>
+                            <div class="bookmark-url">Your organized articles will appear here</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="category">
+                    <h4>📚 Deep Dives (> 10 min)</h4>
+                    <div id="deepDives" class="bookmark-grid">
+                        <div class="bookmark-item">
+                            <div class="bookmark-title">Long-form articles will be categorized here</div>
+                            <div class="bookmark-url">Perfect for focused reading sessions</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="category">
+                    <h4>⏳ Processing</h4>
+                    <div id="processing" class="bookmark-grid">
+                        <div class="bookmark-item">
+                            <div class="bookmark-title">Articles being analyzed by AI</div>
+                            <div class="bookmark-url">Summaries will be generated automatically</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Section -->
+    <div id="debug-info">
+        <h3>🔧 Debug Info:</h3>
+        <p id="status">Loading...</p>
+    </div>
+
+    <!-- JavaScript -->
+    <script type="module" src="popup.js"></script>
+</body>
+</html>

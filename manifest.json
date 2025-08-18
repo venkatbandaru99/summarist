@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Summarist",
+  "version": "1.0",
+  "description": "AI-powered reading list organizer",
+  "permissions": [
+    "identity",
+    "identity.email",
+    "bookmarks",
+    "storage", 
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.googleapis.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://accounts.google.com/*",
+    "https://www.googleapis.com/*",
+    "https://people.googleapis.com/*"
+  ],
+  "oauth2": {
+    "client_id": "370511938690-m1djpgqep6ullfrgvfosp7de2anuq0ak.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/user.emails.read",
+      "openid"
+    ]
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  }
+}
