@@ -55,6 +55,7 @@
             margin-top: 20px;
         }
         
+        /* Import controls */
         .import-controls {
             background: #e8f0fe;
             padding: 15px;
@@ -62,20 +63,26 @@
             margin-bottom: 15px;
         }
         
-        #importBtn {
+        #importBtn, #viewBtn {
             background: #1a73e8;
             color: white;
+            width: 100%;
+            margin-bottom: 10px;
         }
         
-        #importBtn:disabled {
+/*        #debugBtn {
+            background: #ff9800;
+        }*/
+        
+        #importBtn:disabled, #viewBtn:disabled {
             background: #ccc;
             cursor: not-allowed;
         }
         
-        .bookmark-count {
+        .bookmark-count, .saved-bookmark-count {
             font-size: 14px;
             color: #666;
-            margin-top: 5px;
+            margin: 5px 0;
         }
         
         /* Progress section */
@@ -109,8 +116,8 @@
             color: #333;
         }
         
-        /* Bookmark list */
-        .bookmark-list {
+        /* Bookmark list styles */
+        .bookmark-list, #bookmarkListSection {
             margin-top: 20px;
         }
         
@@ -132,16 +139,70 @@
         }
         
         .bookmark-item {
-            padding: 10px;
+            padding: 12px;
             background: white;
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 13px;
+            position: relative;
+        }
+        
+        .bookmark-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
         
         .bookmark-title {
             font-weight: bold;
             margin-bottom: 5px;
+            flex: 1;
+            margin-right: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .bookmark-actions {
+            display: flex;
+            gap: 5px;
+            flex-shrink: 0;
+        }
+        
+        /* CRITICAL: Make sure action buttons are properly styled and clickable */
+        .action-btn {
+            background: #f8f9fa !important;
+            border: 1px solid #ddd !important;
+            border-radius: 4px !important;
+            padding: 6px 8px !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            min-width: 32px !important;
+            height: 32px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.2s ease !important;
+            user-select: none !important;
+            pointer-events: auto !important;
+            z-index: 1000 !important;
+        }
+        
+        .action-btn:hover {
+            background: #e9ecef !important;
+            border-color: #adb5bd !important;
+            transform: translateY(-1px) !important;
+        }
+        
+        .action-btn:active {
+            transform: translateY(0) !important;
+            background: #dee2e6 !important;
+        }
+        
+        .read-btn.read {
+            background: #e8f5e8 !important;
+            border-color: #4caf50 !important;
         }
         
         .bookmark-url {
@@ -150,9 +211,90 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            margin-bottom: 8px;
         }
         
-        /* Debug section */
+        .bookmark-meta {
+            display: flex;
+            gap: 10px;
+            font-size: 11px;
+            color: #888;
+            flex-wrap: wrap;
+        }
+        
+        .bookmark-folder {
+            background: #e3f2fd;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .bookmark-status {
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .status-pending {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
+        .status-processing {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .status-processed {
+            background: #e8f5e8;
+            color: #388e3c;
+        }
+        
+        .reading-time {
+            background: #f3e5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #7b1fa2;
+        }
+        
+        .bookmark-summary {
+            margin-top: 10px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .bookmark-summary ul {
+            margin: 5px 0 0 0;
+            padding-left: 20px;
+        }
+        
+        .bookmark-summary li {
+            margin-bottom: 3px;
+        }
+        
+        /* Loading and empty states */
+        .loading-state, .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1976d2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Debug section 
         #debug-info {
             margin-top: 20px;
             padding: 10px;
@@ -164,37 +306,56 @@
         #debug-info h3 {
             margin: 0 0 10px 0;
             font-size: 14px;
+        }*/
+        
+        /* Debug highlighting */
+        .debug-highlight {
+            border: 3px solid red !important;
+            background: yellow !important;
         }
     </style>
 </head>
 <body>
-    <h2>📚 Summarist</h2>
+    <h2>Summarist</h2>
     
     <!-- Authentication Section -->
     <div id="auth-container">
         <p>Please login to continue</p>
-        <button id="loginBtn">🔐 Login with Google</button>
-        <button id="testBtn">🧪 Test Button (No Firebase)</button>
+        <button id="loginBtn">Login with Google</button>
+        <button id="testBtn">Test Button (No Firebase)</button>
     </div>
 
     <!-- Main App Section -->
     <div id="app-container" class="hidden">
         <!-- User Info -->
         <div class="user-info">
-            <span>👤 <span id="userEmail"></span></span>
+            <span>User: <span id="userEmail"></span></span>
             <button id="logoutBtn">Logout</button>
         </div>
 
         <!-- Bookmark Management Section -->
         <div class="bookmark-section">
-            <h3>📚 Your Reading List</h3>
+            <h3>Your Reading List</h3>
             
             <!-- Import Controls -->
             <div class="import-controls">
-                <button id="importBtn">📥 Import Bookmarks</button>
+                <button id="importBtn">Import Bookmarks</button>
                 <div id="bookmarkCount" class="bookmark-count">
                     Loading bookmark count...
                 </div>
+                
+                <!-- Saved bookmarks info -->
+                <div id="savedBookmarkCount" class="saved-bookmark-count">
+                    Checking saved bookmarks...
+                </div>
+                <button id="viewBtn" disabled>View Bookmarks</button>
+
+                <!-- Success Message (hidden by default) -->
+                <div id="successMessage" style="display: none; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 5px; padding: 10px; margin: 10px 0; color: #388e3c; font-size: 14px;">
+                    ✅ Import completed successfully!
+                </div>
+                
+
             </div>
             
             <!-- Import Progress (hidden by default) -->
@@ -210,47 +371,32 @@
             </div>
             
             <!-- Bookmark List -->
-            <div id="bookmarkList" class="bookmark-list">
-                <div class="category">
-                    <h4>📖 Quick Reads (< 5 min)</h4>
-                    <div id="quickReads" class="bookmark-grid">
-                        <div class="bookmark-item">
-                            <div class="bookmark-title">Import bookmarks to see your reading list!</div>
-                            <div class="bookmark-url">Your organized articles will appear here</div>
-                        </div>
-                    </div>
-                </div>
+            <div id="bookmarkListSection" style="display: none;">
+                <h3>Your Saved Bookmarks</h3>
                 
-                <div class="category">
-                    <h4>📚 Deep Dives (> 10 min)</h4>
-                    <div id="deepDives" class="bookmark-grid">
-                        <div class="bookmark-item">
-                            <div class="bookmark-title">Long-form articles will be categorized here</div>
-                            <div class="bookmark-url">Perfect for focused reading sessions</div>
-                        </div>
+                <div class="bookmark-categories">
+                    <div class="category">
+                        <h4>Quick Reads (< 5 min)</h4>
+                        <div id="quickReads" class="bookmark-grid"></div>
                     </div>
-                </div>
-                
-                <div class="category">
-                    <h4>⏳ Processing</h4>
-                    <div id="processing" class="bookmark-grid">
-                        <div class="bookmark-item">
-                            <div class="bookmark-title">Articles being analyzed by AI</div>
-                            <div class="bookmark-url">Summaries will be generated automatically</div>
-                        </div>
+                    
+                    <div class="category">
+                        <h4>Deep Dives (> 10 min)</h4>
+                        <div id="deepDives" class="bookmark-grid"></div>
+                    </div>
+                    
+                    <div class="category">
+                        <h4>Processing</h4>
+                        <div id="processing" class="bookmark-grid"></div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Debug Section -->
-    <div id="debug-info">
-        <h3>🔧 Debug Info:</h3>
-        <p id="status">Loading...</p>
-    </div>
 
-    <!-- JavaScript -->
+
+    <!-- Load external scripts only - NO inline scripts -->
     <script type="module" src="popup.js"></script>
 </body>
 </html>
