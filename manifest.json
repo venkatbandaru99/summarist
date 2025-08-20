@@ -9,7 +9,8 @@
     "bookmarks",
     "storage", 
     "notifications",
-    "activeTab"
+    "activeTab",
+    "tabs"
   ],
   "host_permissions": [
     "https://*.googleapis.com/*",

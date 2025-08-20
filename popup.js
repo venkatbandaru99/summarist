@@ -7,7 +7,9 @@ import {
     onAuthStateChanged,
     signOut,
     setPersistence,
-    browserLocalPersistence
+    browserLocalPersistence,
+    //getFirebaseIdTokenFromChrome,  // ✅ ADD THIS
+    getValidFirebaseIdToken   
 } from './lib/firebase-bundle.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -284,36 +286,60 @@ async function loadBookmarkData() {
 
 async function checkSavedBookmarks() {
     try {
-        if (!auth.currentUser) {
-            console.log('No user authenticated, skipping saved bookmarks check');
-            return;
-        }
-        
-        console.log('🔍 Checking saved bookmarks...');
-        
-        const savedBookmarks = await retrieveBookmarksFromFirestore(auth.currentUser.uid);
+        console.log('📊 Checking saved bookmarks with Firebase ID token...');
         
         const savedBookmarkCountElement = document.getElementById('savedBookmarkCount');
         const viewBtn = document.getElementById('viewBtn');
         
-        if (savedBookmarks.length > 0) {
-            savedBookmarkCountElement.textContent = `${savedBookmarks.length} bookmarks saved in database`;
-            savedBookmarkCountElement.style.color = '#333';
-            viewBtn.disabled = false;
-            viewBtn.textContent = `View ${savedBookmarks.length} Bookmarks`;
+        savedBookmarkCountElement.textContent = 'Checking saved bookmarks...';
+        viewBtn.disabled = true;
+        
+        // ✅ Get Firebase ID token (not Chrome token)-- reverted to chrome
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        const userId = auth.currentUser.uid;
+        
+        console.log('🔑 Using Firebase ID token for Firestore access');
+        
+        const response = await chrome.runtime.sendMessage({
+            action: 'getBookmarks',
+            userId: userId,
+            firebaseIdToken: firebaseIdToken  // ✅ firebase ID token
+        });
+        
+        console.log('📊 Get bookmarks response:', response);
+        
+        if (response && response.success) {
+            const bookmarkCount = response.bookmarks.length;
+            
+            if (bookmarkCount === 0) {
+                savedBookmarkCountElement.textContent = 'No saved bookmarks yet';
+                savedBookmarkCountElement.style.color = '#666';
+                viewBtn.disabled = true;
+                viewBtn.textContent = 'Import Bookmarks First';
+            } else {
+                savedBookmarkCountElement.textContent = `${bookmarkCount} bookmarks saved`;
+                savedBookmarkCountElement.style.color = '#4caf50';
+                viewBtn.disabled = false;
+                viewBtn.textContent = 'View Your Bookmarks';
+            }
         } else {
-            savedBookmarkCountElement.textContent = 'No bookmarks saved yet';
-            savedBookmarkCountElement.style.color = '#666';
-            viewBtn.disabled = true;
-            viewBtn.textContent = 'No Saved Bookmarks';
+            throw new Error(response?.error || 'Failed to get saved bookmarks');
         }
         
     } catch (error) {
         console.error('❌ Error checking saved bookmarks:', error);
-        document.getElementById('savedBookmarkCount').textContent = 'Error checking saved bookmarks';
-        document.getElementById('savedBookmarkCount').style.color = '#d32f2f';
+        
+        const savedBookmarkCountElement = document.getElementById('savedBookmarkCount');
+        const viewBtn = document.getElementById('viewBtn');
+        
+        savedBookmarkCountElement.textContent = 'Error checking bookmarks';
+        savedBookmarkCountElement.style.color = '#d32f2f';
+        viewBtn.disabled = true;
+        viewBtn.textContent = 'Error Loading';
     }
 }
+
 
 async function importBookmarks() {
     try {
@@ -326,11 +352,11 @@ async function importBookmarks() {
         
         const importBtn = document.getElementById('importBtn');
         if (importBtn.disabled) {
-            alert('No bookmarks available to import. Please add some bookmarks to your browser first.');
+            alert('No bookmarks available to import.');
             return;
         }
         
-        // Get bookmark tree structure first
+        // Get folder selection...
         showImportProgress();
         document.getElementById('importProgressText').textContent = 'Analyzing bookmark structure...';
         
@@ -342,7 +368,6 @@ async function importBookmarks() {
         
         hideImportProgress();
         
-        // Show folder selection interface
         const selectedFolders = await showFolderSelectionDialog(treeResponse.tree);
         
         if (!selectedFolders || selectedFolders.length === 0) {
@@ -350,14 +375,18 @@ async function importBookmarks() {
             return;
         }
         
-        // Start importing selected folders
+        // ✅ Get Firebase ID token for import-- reverted to chrome
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        
         showImportProgress();
         document.getElementById('importProgressText').textContent = 'Importing selected bookmarks...';
         
         const importResponse = await chrome.runtime.sendMessage({
             action: 'importSelectedBookmarks',
             userId: auth.currentUser.uid,
-            selectedFolders: selectedFolders
+            selectedFolders: selectedFolders,
+            firebaseIdToken: firebaseIdToken // ✅ Chrome ID token
         });
         
         if (importResponse && importResponse.success) {
@@ -383,6 +412,14 @@ async function saveBookmarkToFirestore(bookmark, userId) {
             throw new Error('User not authenticated');
         }
         
+        // ✅ ADD: Get firbaseIdToken token for authentication
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        
+        if (!firebaseIdToken) {
+            throw new Error('No Chrome authentication token available');
+        }
+        
         const saveResult = await chrome.runtime.sendMessage({
             action: 'saveToFirestore',
             bookmark: {
@@ -398,7 +435,8 @@ async function saveBookmarkToFirestore(bookmark, userId) {
                 tags: [],
                 isRead: false
             },
-            userId: userId
+            userId: userId,
+            firebaseIdToken: firebaseIdToken // ✅ ADD: Pass Chrome token
         });
         
         if (saveResult && saveResult.success) {
@@ -416,104 +454,106 @@ async function saveBookmarkToFirestore(bookmark, userId) {
 
 async function retrieveBookmarksFromFirestore(userId) {
     try {
-        console.log('📖 Retrieving bookmarks from Firestore for user:', userId);
+        console.log('📖 Requesting bookmarks from background script securely...');
         
-        const firestoreUrl = `https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${userId}/bookmarks`;
+        // ✅ SECURE: Get Firebase ID token
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
         
-        const response = await fetch(firestoreUrl, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        const response = await chrome.runtime.sendMessage({
+            action: 'getBookmarks',
+            userId: userId,
+            firebaseIdToken: firebaseIdToken // ✅ PASS FIREBASE ID TOKEN
         });
         
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Firestore API error: ${response.status} - ${errorText}`);
+        if (response && response.success) {
+            console.log(`✅ Securely retrieved ${response.bookmarks.length} bookmarks via background`);
+            return response.bookmarks;
+        } else {
+            throw new Error(response?.error || 'Failed to get bookmarks from background');
         }
-        
-        const data = await response.json();
-        console.log('📊 Raw Firestore response received');
-        
-        if (!data.documents) {
-            console.log('📝 No bookmarks found in database');
-            return [];
-        }
-        
-        const bookmarks = data.documents.map(doc => {
-            const fields = doc.fields;
-            return {
-                id: doc.name.split('/').pop(),
-                title: fields.title?.stringValue || 'Untitled',
-                url: fields.url?.stringValue || '',
-                folder: fields.folder?.stringValue || '',
-                status: fields.status?.stringValue || 'pending',
-                dateAdded: fields.dateAdded?.timestampValue ? new Date(fields.dateAdded.timestampValue) : new Date(),
-                dateImported: fields.dateImported?.timestampValue ? new Date(fields.dateImported.timestampValue) : new Date(),
-                isRead: fields.isRead?.booleanValue || false,
-                summary: fields.summary?.arrayValue?.values?.map(v => v.stringValue) || null,
-                readingTime: fields.readingTime?.integerValue ? parseInt(fields.readingTime.integerValue) : null,
-                category: fields.category?.stringValue || null,
-                tags: fields.tags?.arrayValue?.values?.map(v => v.stringValue) || []
-            };
-        });
-        
-        console.log(`✅ Successfully retrieved ${bookmarks.length} bookmarks`);
-        return bookmarks;
         
     } catch (error) {
-        console.error('❌ Error retrieving bookmarks:', error);
+        console.error('❌ Error getting bookmarks via background:', error);
         throw error;
     }
 }
 
 async function loadAndDisplayBookmarks() {
     try {
+        console.log('📚 Loading and displaying bookmarks...');
+        
         if (!auth.currentUser) {
-            alert('Please login first');
-            return;
+            throw new Error('User not authenticated');
         }
         
-        console.log('👁️ Loading and displaying bookmarks...');
+        // Show loading state
+        document.getElementById('bookmarkListSection').style.display = 'block';
+        document.getElementById('quickReads').innerHTML = '<div class="loading-state"><div class="loading-spinner"></div>Loading bookmarks...</div>';
+        document.getElementById('deepDives').innerHTML = '';
+        document.getElementById('processing').innerHTML = '';
         
-        const bookmarkListSection = document.getElementById('bookmarkListSection');
-        bookmarkListSection.style.display = 'block';
+        // ✅ FIXED: Get Chrome Identity token
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
         
-        const categories = ['quickReads', 'deepDives', 'processing'];
-        categories.forEach(category => {
-            const container = document.getElementById(category);
-            container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div>Loading bookmarks...</div>';
+        if (!firebaseIdToken) {
+            throw new Error('No Chrome authentication token available');
+        }
+        
+        // Get bookmarks from background script
+        const response = await chrome.runtime.sendMessage({
+            action: 'getBookmarks',
+            userId: auth.currentUser.uid,
+            firebaseIdToken: firebaseIdToken // ✅ PASS: firebaseIdToken
         });
         
-        const bookmarks = await retrieveBookmarksFromFirestore(auth.currentUser.uid);
+        console.log('📊 Load bookmarks response:', response);
         
-        console.log(`📊 Retrieved ${bookmarks.length} bookmarks for display`);
-        
-        if (bookmarks.length === 0) {
-            categories.forEach(category => {
-                const container = document.getElementById(category);
-                container.innerHTML = '<div class="empty-state">No bookmarks in this category</div>';
-            });
-            return;
+        if (response && response.success) {
+            const bookmarks = response.bookmarks;
+            console.log(`✅ Successfully retrieved ${bookmarks.length} bookmarks`);
+            
+            // Display bookmarks in categories (you'll need this function)
+            displayBookmarksInCategories(bookmarks);
+            
+            // Add interactive buttons (if you have this function)
+            setTimeout(() => {
+                if (typeof emergencyButtonTest === 'function') {
+                    emergencyButtonTest();
+                }
+            }, 500);
+            
+        } else {
+            throw new Error(response?.error || 'Failed to get bookmarks');
         }
-        
-        const categorized = categorizeBookmarks(bookmarks);
-        
-        displayBookmarkCategory('quickReads', categorized.quickReads, 'Quick Reads');
-        displayBookmarkCategory('deepDives', categorized.deepDives, 'Deep Dives');
-        displayBookmarkCategory('processing', categorized.processing, 'Processing');
-        
-        console.log('✅ Bookmarks displayed successfully');
-        console.log('✅ Bookmarks displayed successfully');
-
-// ADD THIS LINE:
-setTimeout(emergencyButtonTest, 500);
-        console.log(`📊 Categories: Quick(${categorized.quickReads.length}), Deep(${categorized.deepDives.length}), Processing(${categorized.processing.length})`);
         
     } catch (error) {
         console.error('❌ Error loading bookmarks:', error);
-        alert(`Failed to load bookmarks: ${error.message}`);
+        
+        // Show error state
+        document.getElementById('quickReads').innerHTML = `
+            <div class="error-state">
+                <p>Error loading bookmarks: ${error.message}</p>
+                <button onclick="loadAndDisplayBookmarks()" style="margin-top: 10px;">Retry</button>
+            </div>
+        `;
     }
+}
+
+// Add this function around line 420-430, after loadAndDisplayBookmarks()
+function displayBookmarksInCategories(bookmarks) {
+    console.log('📊 Categorizing and displaying bookmarks...');
+    
+    const categorized = categorizeBookmarks(bookmarks);
+    
+    console.log(`📋 Categories: Quick(${categorized.quickReads.length}), Deep(${categorized.deepDives.length}), Processing(${categorized.processing.length})`);
+    
+    displayBookmarkCategory('quickReads', categorized.quickReads, 'Quick Reads');
+    displayBookmarkCategory('deepDives', categorized.deepDives, 'Deep Dives');
+    displayBookmarkCategory('processing', categorized.processing, 'Processing');
+    
+    console.log('✅ Bookmarks displayed successfully');
 }
 
 function categorizeBookmarks(bookmarks) {
@@ -787,6 +827,23 @@ function emergencyButtonTest() {
             return;
         }
         
+        // Get bookmark data FIRST
+        const bookmarkId = item.getAttribute('data-bookmark-id');
+        
+        // Find URL - look in all divs for text containing http
+        let url = '';
+        const allDivs = item.querySelectorAll('div');
+        for (const div of allDivs) {
+            const text = div.textContent || '';
+            const titleAttr = div.title || '';
+            if (text.includes('http') || titleAttr.includes('http')) {
+                url = titleAttr || text;
+                break;
+            }
+        }
+        
+        console.log(`Compact bookmark ${index}: ID=${bookmarkId}, URL found=${!!url}`);
+        
         // Find the first div that contains the title (should be first child)
         const titleContainer = item.querySelector('div:first-child');
         
@@ -843,23 +900,27 @@ function emergencyButtonTest() {
                 line-height: 1 !important;
             `;
             
-            // Get bookmark data
-            const bookmarkId = item.getAttribute('data-bookmark-id');
-            
-            // Find URL - look in all divs for text containing http
-            let url = '';
-            const allDivs = item.querySelectorAll('div');
-            for (const div of allDivs) {
-                const text = div.textContent || '';
-                const titleAttr = div.title || '';
-                if (text.includes('http') || titleAttr.includes('http')) {
-                    url = titleAttr || text;
-                    break;
-                }
-            }
-            
-            console.log(`Compact bookmark ${index}: ID=${bookmarkId}, URL found=${!!url}`);
-            
+            // Create compact DELETE button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '🗑️';
+            deleteBtn.title = 'Delete bookmark';
+            deleteBtn.style.cssText = `
+                background: #ffffff !important;
+                color: #f44336 !important;
+                border: 1px solid #f44336 !important;
+                border-radius: 3px !important;
+                padding: 2px 4px !important;
+                cursor: pointer !important;
+                font-size: 10px !important;
+                width: 20px !important;
+                height: 20px !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                margin: 0 !important;
+                line-height: 1 !important;
+            `;
+
             // OPEN button click handler
             openBtn.addEventListener('click', function(e) {
                 e.preventDefault();
@@ -910,95 +971,103 @@ function emergencyButtonTest() {
             
             // MARK button click handler (ENHANCED WITH TOGGLE)
             markBtn.addEventListener('click', async function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Determine current state
+    const isCurrentlyRead = this.textContent === '✅';
+    const newReadStatus = !isCurrentlyRead;
+    
+    console.log(`📖 SECURE MARK clicked for bookmark ${index}, setting to: ${newReadStatus ? 'read' : 'unread'}`);
+    
+    const originalText = this.textContent;
+    this.textContent = '⏳';
+    this.style.background = '#4CAF50 !important';
+    
+    try {
+        if (auth && auth.currentUser && bookmarkId) {
+            console.log(`🔄 Securely updating Firestore bookmark ${bookmarkId} to isRead: ${newReadStatus}`);
+            
+            // ✅ SECURE: Get Firebase ID token for authentication
+            const firebaseIdToken = await getValidFirebaseIdToken();
+            
+            if (!firebaseIdToken) {
+                throw new Error('Unable to get authentication token');
+            }
+            
+            const firestoreUrl = `https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${auth.currentUser.uid}/bookmarks/${bookmarkId}?updateMask.fieldPaths=isRead`;
+            
+            const updateData = {
+                fields: {
+                    isRead: { booleanValue: newReadStatus }
+                }
+            };
+            
+            // ✅ SECURE: Make authenticated request
+            const response = await fetch(firestoreUrl, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${firebaseIdToken}` // ✅ ADDED AUTHENTICATION
+                },
+                body: JSON.stringify(updateData)
+            });
+            
+            if (response.ok) {
+                console.log(`✅ Successfully updated Firestore securely: isRead = ${newReadStatus}`);
+                
+                // Update button appearance based on new state
+                if (newReadStatus) {
+                    this.textContent = '✅';
+                    this.style.background = '#4CAF50 !important';
+                    this.title = 'Mark as unread (click to toggle)';
+                } else {
+                    this.textContent = '📖';
+                    this.style.background = '#FF9800 !important';
+                    this.title = 'Mark as read';
+                }
+                
+                // Update the status text in the bookmark item
+                updateBookmarkStatusDisplay(item, newReadStatus);
+                
+            } else {
+                const errorText = await response.text();
+                console.error(`❌ Secure Firestore update failed: ${response.status} - ${errorText}`);
+                throw new Error(`Secure update failed: ${response.status}`);
+            }
+        } else {
+            console.log('⚠️ No auth or bookmarkId available for secure update');
+            throw new Error('Authentication required');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error in secure bookmark read status update:', error);
+        this.textContent = '❌';
+        this.style.background = '#f44336 !important';
+        this.title = `Error: ${error.message}`;
+        
+        // Reset button after error
+        setTimeout(() => {
+            this.textContent = originalText;
+            this.style.background = originalText === '✅' ? '#4CAF50 !important' : '#FF9800 !important';
+            this.title = originalText === '✅' ? 'Mark as unread' : 'Mark as read';
+        }, 2000);
+    }
+});
+            
+            // DELETE button click handler
+            deleteBtn.addEventListener('click', async function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                
-                // Determine current state
-                const isCurrentlyRead = this.textContent === '✅';
-                const newReadStatus = !isCurrentlyRead;
-                
-                console.log(`📖 COMPACT MARK clicked for bookmark ${index}, current: ${isCurrentlyRead ? 'read' : 'unread'}, setting to: ${newReadStatus ? 'read' : 'unread'}`);
-                
-                const originalText = this.textContent;
-                this.textContent = '⏳';
-                this.style.background = '#4CAF50 !important';
-                
-                try {
-                    if (auth && auth.currentUser && bookmarkId) {
-                        console.log(`🔄 Updating Firestore bookmark ${bookmarkId} to isRead: ${newReadStatus}`);
-                        
-                        const firestoreUrl = `https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${auth.currentUser.uid}/bookmarks/${bookmarkId}?updateMask.fieldPaths=isRead`;
-                        
-                        const updateData = {
-                            fields: {
-                                isRead: { booleanValue: newReadStatus }
-                            }
-                        };
-                        
-                        const response = await fetch(firestoreUrl, {
-                            method: 'PATCH',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify(updateData)
-                        });
-                        
-                        if (response.ok) {
-                            console.log(`✅ Successfully updated Firestore: isRead = ${newReadStatus}`);
-                            
-                            // Update button appearance based on new state
-                            if (newReadStatus) {
-                                this.textContent = '✅';
-                                this.style.background = '#4CAF50 !important';
-                                this.title = 'Mark as unread (click to toggle)';
-                            } else {
-                                this.textContent = '📖';
-                                this.style.background = '#FF9800 !important';
-                                this.title = 'Mark as read';
-                            }
-                            
-                            // Update the status text in the bookmark item
-                            updateBookmarkStatusDisplay(item, newReadStatus);
-                            
-                        } else {
-                            const errorText = await response.text();
-                            console.error(`❌ Firestore update failed: ${response.status} - ${errorText}`);
-                            throw new Error(`Firestore update failed: ${response.status}`);
-                        }
-                    } else {
-                        console.log('⚠️ No auth or bookmarkId available, using local toggle only');
-                        
-                        // Local-only toggle for testing
-                        if (newReadStatus) {
-                            this.textContent = '✅';
-                            this.style.background = '#4CAF50 !important';
-                            this.title = 'Mark as unread (local only)';
-                        } else {
-                            this.textContent = '📖';
-                            this.style.background = '#FF9800 !important';
-                            this.title = 'Mark as read (local only)';
-                        }
-                        
-                        // Update local status display
-                        updateBookmarkStatusDisplay(item, newReadStatus);
-                    }
-                    
-                } catch (error) {
-                    console.error('❌ Error updating bookmark read status:', error);
-                    this.textContent = '❌';
-                    this.style.background = '#f44336 !important';
-                    this.title = `Error: ${error.message}`;
-                    
-                    // Reset button after error
-                    setTimeout(() => {
-                        this.textContent = originalText;
-                        this.style.background = originalText === '✅' ? '#4CAF50 !important' : '#FF9800 !important';
-                        this.title = originalText === '✅' ? 'Mark as unread' : 'Mark as read';
-                    }, 2000);
+    
+                const bookmarkTitle = item.querySelector('div[style*="font-weight: bold"]').textContent;
+    
+                if (confirm(`Delete "${bookmarkTitle.substring(0, 40)}..."?`)) {
+                    await deleteBookmarkWithUndo(bookmarkId, bookmarkTitle, this);
                 }
             });
             
-            // Add hover effects for MARK button (INSIDE the function)
+            // Add hover effects for MARK button
             markBtn.addEventListener('mouseenter', function() {
                 if (this.textContent === '📖') {
                     this.style.background = '#F57C00 !important';
@@ -1015,9 +1084,10 @@ function emergencyButtonTest() {
                 }
             });
             
-            // Add buttons to container
+            // Add buttons to container (CORRECTED ORDER)
             buttonContainer.appendChild(openBtn);
             buttonContainer.appendChild(markBtn);
+            buttonContainer.appendChild(deleteBtn);
             
             // Safely add to the title container without disrupting layout
             const titleDiv = titleContainer.querySelector('div[style*="font-weight: bold"]') || titleContainer.firstElementChild;
@@ -1068,7 +1138,216 @@ function emergencyButtonTest() {
     
     // Check that main UI buttons still exist
     const viewBtn = document.getElementById('viewBtn');
-console.log(`🔍 UI Check - View button: ${viewBtn ? 'EXISTS' : 'MISSING'}`);
+    console.log(`🔍 UI Check - View button: ${viewBtn ? 'EXISTS' : 'MISSING'}`);
+}
+// Gmail-style delete with undo
+// Gmail-style delete with undo - SECURE VERSION
+async function deleteBookmarkWithUndo(bookmarkId, bookmarkTitle, buttonElement) {
+    try {
+        // ✅ SECURE: Get Chrome token
+        //const firebaseIdToken = await chrome.identity.getAuthToken({ interactive: false });
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        
+        if (!firebaseIdToken) {
+            throw new Error('Unable to get authentication token');
+        }
+        
+        const response = await chrome.runtime.sendMessage({
+            action: 'deleteBookmark',
+            bookmarkId: bookmarkId,
+            userId: auth.currentUser.uid,
+            firebaseIdToken: firebaseIdToken // ✅ PASS firebaseIdToken
+        });
+        
+        if (response && response.success) {
+            const bookmarkItem = buttonElement.closest('.bookmark-item');
+            bookmarkItem.style.display = 'none';
+            showUndoToast(bookmarkId, bookmarkTitle, bookmarkItem);
+        } else {
+            throw new Error(response?.error || 'Delete failed');
+        }
+    } catch (error) {
+        console.error('❌ Delete failed:', error);
+        alert('Delete failed: ' + error.message);
+    }
+}
+
+// Show undo notification
+// Replace the showUndoToast function in your popup.js with this improved version:
+
+function showUndoToast(bookmarkId, title, bookmarkElement) {
+    // Create compact Gmail-style toast
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #323232;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 10001;
+        font-size: 13px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        max-width: 280px;
+        min-width: 200px;
+        animation: slideUp 0.3s ease-out;
+    `;
+    
+    // Add CSS animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideUp {
+            from {
+                transform: translateX(-50%) translateY(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(-50%) translateY(100%);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Truncate title for compact display
+    const displayTitle = title.length > 25 ? title.substring(0, 25) + '...' : title;
+    
+    toast.innerHTML = `
+        <span style="flex: 1; color: #ffffff;">Deleted "${displayTitle}"</span>
+        <button id="undoDelete" style="
+            background: transparent;
+            color: #4CAF50;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: background-color 0.2s ease;
+        " onmouseover="this.style.backgroundColor='rgba(76, 175, 80, 0.1)'" 
+           onmouseout="this.style.backgroundColor='transparent'">
+            UNDO
+        </button>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 8 seconds with smooth animation
+    const timeout = setTimeout(() => {
+        if (document.body.contains(toast)) {
+            toast.style.animation = 'slideDown 0.3s ease-out forwards';
+            setTimeout(() => {
+                if (document.body.contains(toast)) {
+                    document.body.removeChild(toast);
+                }
+            }, 300);
+        }
+    }, 8000);
+    
+    // Undo functionality
+    toast.querySelector('#undoDelete').addEventListener('click', async () => {
+        clearTimeout(timeout);
+        
+        // Show loading state
+        const undoBtn = toast.querySelector('#undoDelete');
+        undoBtn.textContent = 'UNDOING...';
+        undoBtn.style.color = '#999';
+        undoBtn.disabled = true;
+        
+        try {
+            await restoreBookmark(bookmarkId);
+            bookmarkElement.style.display = 'block';
+            
+            // Success feedback
+            toast.innerHTML = `
+                <span style="flex: 1; color: #4CAF50;">
+                    <span style="margin-right: 6px;">✓</span>Bookmark restored
+                </span>
+            `;
+            
+            // Remove after success message
+            setTimeout(() => {
+                if (document.body.contains(toast)) {
+                    toast.style.animation = 'slideDown 0.3s ease-out forwards';
+                    setTimeout(() => {
+                        if (document.body.contains(toast)) {
+                            document.body.removeChild(toast);
+                        }
+                    }, 300);
+                }
+            }, 2000);
+            
+        } catch (error) {
+            console.error('❌ Failed to restore bookmark:', error);
+            
+            // Error feedback
+            toast.innerHTML = `
+                <span style="flex: 1; color: #f44336;">
+                    <span style="margin-right: 6px;">✗</span>Restore failed
+                </span>
+            `;
+            
+            // Remove after error message
+            setTimeout(() => {
+                if (document.body.contains(toast)) {
+                    document.body.removeChild(toast);
+                }
+            }, 3000);
+        }
+    });
+}
+
+// Restore deleted bookmark
+// Fixed restore bookmark function
+// Fixed restore bookmark function - USE BACKGROUND SCRIPT
+async function restoreBookmark(bookmarkId) {
+    try {
+        console.log('🔄 Securely restoring bookmark via background script:', bookmarkId);
+        
+        // ✅ SECURE: Get Chrome token for authentication
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        
+        if (!firebaseIdToken) {
+            throw new Error('Unable to get authentication token');
+        }
+        
+        // ✅ USE BACKGROUND SCRIPT (consistent with other functions)
+        const response = await chrome.runtime.sendMessage({
+            action: 'restoreBookmark',
+            bookmarkId: bookmarkId,
+            userId: auth.currentUser.uid,
+            firebaseIdToken: firebaseIdToken // ✅ PASS CHROME TOKEN
+        });
+        
+        if (response && response.success) {
+            console.log('✅ Bookmark securely restored via background script');
+        } else {
+            throw new Error(response?.error || 'Restore failed');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error in secure restore via background:', error);
+        throw error;
+    }
 }
 // New function to show folder selection dialog
 async function showFolderSelectionDialog(bookmarkTree) {
@@ -1255,4 +1534,76 @@ function countBookmarksInFolder(folderNode) {
     }
     
     return count;
+}
+// Test authenticated access to Firestore
+async function testAuthenticatedAccess() {
+    if (!auth.currentUser) {
+        console.log('❌ No authenticated user');
+        return;
+    }
+    
+    try {
+        console.log('🔍 Testing authenticated access...');
+        
+        // Get ID token for authentication
+        const firebaseIdToken = await getValidFirebaseIdToken();
+        
+        const testUrl = `https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${auth.currentUser.uid}/bookmarks`;
+        
+        const response = await fetch(testUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${firebaseIdToken}`
+            }
+        });
+        
+        console.log('📊 Authenticated request status:', response.status);
+        
+        if (response.ok) {
+            console.log('✅ Authenticated access working');
+        } else {
+            console.error('❌ Authenticated access failed:', await response.text());
+        }
+        
+    } catch (error) {
+        console.error('❌ Authentication test failed:', error);
+    }
+}
+
+// Add this to test security after login
+async function testSecurity() {
+    console.log('🧪 Testing security...');
+    
+    // Test 1: Try unauthenticated access (should fail)
+    try {
+        const response = await fetch(`https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${auth.currentUser.uid}/bookmarks`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (response.ok) {
+            console.error('🚨 SECURITY BREACH: Unauthenticated access worked!');
+        } else {
+            console.log('✅ Security working: Unauthenticated access blocked');
+        }
+    } catch (error) {
+        console.log('✅ Security working: Request blocked');
+    }
+    
+    // Test 2: Try authenticated access (should work)
+    const firebaseIdToken = await getValidFirebaseIdToken();
+    const authResponse = await fetch(`https://firestore.googleapis.com/v1/projects/summarist-project-dbc0d/databases/(default)/documents/users/${auth.currentUser.uid}/bookmarks`, {
+        method: 'GET',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${firebaseIdToken}`
+        }
+    });
+    
+    if (authResponse.ok) {
+        console.log('✅ Authenticated access working');
+    } else {
+        console.error('❌ Authenticated access failed');
+    }
 }
